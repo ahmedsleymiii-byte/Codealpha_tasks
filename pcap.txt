@@ -1,0 +1,136 @@
+from scapy.all import sniff, IP, TCP, UDP, Raw
+from datetime import datetime
+import re
+
+
+# -----------------------------
+# Time helper
+# -----------------------------
+def now():
+    return datetime.now().strftime("%H:%M:%S")
+
+
+# -----------------------------
+# Extract protocol
+# -----------------------------
+def protocol(packet):
+    if TCP in packet:
+        return "TCP"
+    if UDP in packet:
+        return "UDP"
+    return "OTHER"
+
+
+# -----------------------------
+# Extract ports
+# -----------------------------
+def ports(packet):
+    sport, dport = "-", "-"
+
+    if TCP in packet:
+        sport = packet[TCP].sport
+        dport = packet[TCP].dport
+    elif UDP in packet:
+        sport = packet[UDP].sport
+        dport = packet[UDP].dport
+
+    return sport, dport
+
+
+# -----------------------------
+# Try to extract domain (DNS-like payload guess)
+# -----------------------------
+def extract_domain(payload):
+    if not payload:
+        return None
+
+    text = payload.lower()
+
+    domains = [
+        "youtube", "google", "instagram",
+        "facebook", "fbcdn", "pinterest",
+        "whatsapp", "netflix", "tiktok"
+    ]
+
+    for d in domains:
+        if d in text:
+            return d
+
+    return None
+
+
+# -----------------------------
+# Classify traffic type
+# -----------------------------
+def classify(domain, packet):
+    if UDP in packet and packet.haslayer(Raw):
+        return "DNS / Lookup Traffic"
+
+    if domain == "youtube":
+        return "Video Streaming (YouTube)"
+    if domain in ["instagram", "facebook", "fbcdn"]:
+        return "Social Media (Meta)"
+    if domain == "pinterest":
+        return "Image Feed (Pinterest)"
+    if domain == "netflix":
+        return "Streaming (Netflix)"
+
+    if TCP in packet:
+        return "Encrypted HTTPS Traffic"
+
+    if UDP in packet:
+        return "UDP Lightweight Traffic"
+
+    return "Unknown"
+
+
+# -----------------------------
+# Payload extractor
+# -----------------------------
+def payload(packet):
+    if packet.haslayer(Raw):
+        return str(packet[Raw].load[:100])
+    return None
+
+
+# -----------------------------
+# Main handler
+# -----------------------------
+def handle(packet):
+    if IP not in packet:
+        return
+
+    src = packet[IP].src
+    dst = packet[IP].dst
+
+    proto = protocol(packet)
+    sport, dport = ports(packet)
+    data = payload(packet)
+
+    domain = extract_domain(data)
+    traffic_type = classify(domain, packet)
+
+    print(f"[{now()}] {proto} {src}:{sport} -> {dst}:{dport}")
+    print(f"        TYPE: {traffic_type}")
+
+    if domain:
+        print(f"        DOMAIN HINT: {domain}")
+
+    if data:
+        print(f"        DATA: {data}")
+
+    print("-" * 90)
+
+
+# -----------------------------
+# Start sniffing
+# -----------------------------
+def start():
+    print("=== SMART NETWORK SNIFFER STARTED ===")
+    print("Monitoring traffic...\n")
+
+    sniff(prn=handle, store=False)
+
+
+if __name__ == "__main__":
+    start()
